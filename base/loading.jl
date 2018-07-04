@@ -815,16 +815,27 @@ function require(into::Module, mod::Symbol)
         if where.uuid === nothing
             throw(ArgumentError("""
                 Package $mod not found in current path:
-                 - Run `Pkg.add($(repr(String(mod))))` to install the $mod package.
+                - Run `Pkg.add($(repr(String(mod))))` to install the $mod package.
                 """))
         else
-            throw(ArgumentError("""
-                Package $(where.name) does not have $mod in its dependencies:
-                 - If you have $(where.name) checked out for development and have
-                   added $mod as a dependency but haven't updated your primary
-                   environment's manifest file, try `Pkg.resolve()`.
-                 - Otherwise you may need to report an issue with $(where.name).
-                """))
+            s = """
+            Package $(where.name) does not have $mod in its dependencies:
+            - If you have $(where.name) checked out for development and have
+              added $mod as a dependency but haven't updated your primary
+              environment's manifest file, try `Pkg.resolve()`.
+            - Otherwise you may need to report an issue with $(where.name)"""
+
+            uuidkey = identify_package(PkgId(string(into)), String(mod))
+            # Attempt fall back to toplevel loading
+            if uuidkey === nothing
+                @error s
+            else
+                @warn """
+                $s
+
+                Falling back to loading Project dependency.
+                """
+            end
         end
     end
     if _track_dependencies[]
