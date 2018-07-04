@@ -28,7 +28,7 @@ struct ReinterpretArray{T,N,S,A<:AbstractArray{S, N}} <: AbstractArray{T, N}
         isbitstype(S) || throwbits(S, T, S)
         (N != 0 || sizeof(T) == sizeof(S)) || throwsize0(S, T)
         if N != 0 && sizeof(S) != sizeof(T)
-            dim = size(a)[1]
+            dim = _length(axes(a)[1])
             rem(dim*sizeof(S),sizeof(T)) == 0 || thrownonint(S, T, dim)
         end
         new{T, N, S, A}(a)
@@ -44,6 +44,13 @@ function size(a::ReinterpretArray{T,N,S} where {N}) where {T,S}
     psize = size(a.parent)
     size1 = div(psize[1]*sizeof(S), sizeof(T))
     tuple(size1, tail(psize)...)
+end
+
+function axes(a::ReinterpretArray{T,N,S} where {N}) where {T,S}
+    paxs = axes(a.parent)
+    f, l = first(paxs[1]), _length(paxs[1])
+    size1 = div(l*sizeof(S), sizeof(T))
+    tuple(oftype(paxs[1], f:f+size1-1), tail(paxs)...)
 end
 
 elsize(::Type{<:ReinterpretArray{T}}) where {T} = sizeof(T)
@@ -71,13 +78,14 @@ end
     if sizeof(T) == sizeof(S) && (fieldcount(T) + fieldcount(S)) == 0
         return reinterpret(T, a.parent[i1, tailinds...])
     else
-        ind_start, sidx = divrem((i1-1)*sizeof(T), sizeof(S))
+        ax1 = axes(a.parent)[1]
+        ind_start, sidx = divrem((i1-first(ax1))*sizeof(T), sizeof(S))
         t = Ref{T}()
         s = Ref{S}()
         GC.@preserve t s begin
             tptr = Ptr{UInt8}(unsafe_convert(Ref{T}, t))
             sptr = Ptr{UInt8}(unsafe_convert(Ref{S}, s))
-            i = 1
+            i = first(ax1)
             nbytes_copied = 0
             # This is a bit complicated to deal with partial elements
             # at both the start and the end. LLVM will fold as appropriate,
@@ -119,14 +127,15 @@ end
     if sizeof(T) == sizeof(S) && (fieldcount(T) + fieldcount(S)) == 0
         return setindex!(a.parent, reinterpret(S, v), i1, tailinds...)
     else
-        ind_start, sidx = divrem((i1-1)*sizeof(T), sizeof(S))
+        ax1 = axes(a.parent)[1]
+        ind_start, sidx = divrem((i1-first(ax1))*sizeof(T), sizeof(S))
         t = Ref{T}(v)
         s = Ref{S}()
         GC.@preserve t s begin
             tptr = Ptr{UInt8}(unsafe_convert(Ref{T}, t))
             sptr = Ptr{UInt8}(unsafe_convert(Ref{S}, s))
             nbytes_copied = 0
-            i = 1
+            i = first(ax1)
             # Deal with any partial elements at the start. We'll have to copy in the
             # element from the original array and overwrite the relevant parts
             if sidx != 0
